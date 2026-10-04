@@ -447,9 +447,25 @@ impl<P, C, S> Shell<P, C, S> {
     pub fn connected_components(&self) -> Vec<Shell<P, C, S>> {
         let mut adjacency = self.face_adjacency();
         let components = create_components(&mut adjacency);
+        // The adjacency map is keyed by face ids, which are pointer-based, so its iteration order
+        // (and the traversal order) changes from run to run. Return the components and the faces in
+        // them in the order of `self` so that the result is deterministic.
+        let mut position: HashMap<&Face<P, C, S>, usize> = HashMap::default();
+        self.face_iter().enumerate().for_each(|(i, face)| {
+            position.entry(face).or_insert(i);
+        });
+        let mut components: Vec<Vec<usize>> = components
+            .into_iter()
+            .map(|vec| {
+                let mut indices: Vec<usize> = vec.into_iter().map(|face| position[face]).collect();
+                indices.sort_unstable();
+                indices
+            })
+            .collect();
+        components.sort_unstable_by_key(|indices| indices[0]);
         components
             .into_iter()
-            .map(|vec| vec.into_iter().cloned().collect())
+            .map(|indices| indices.into_iter().map(|i| self[i].clone()).collect())
             .collect()
     }
 

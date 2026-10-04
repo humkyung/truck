@@ -137,3 +137,26 @@ fn empty_solid_is_rejected_without_panic() {
     assert!(crate::and(&empty, &cube, 0.05).is_none());
     assert!(crate::or(&cube, &empty, 0.05).is_none());
 }
+
+/// The result of a boolean operation does not depend on the run: the face order used to follow the
+/// iteration order of maps keyed by pointer-based ids.
+#[test]
+fn result_face_order_is_deterministic() {
+    let order = || {
+        let mut tool = cylinder(0.5, 0.5, 0.25, -0.5, 2.0);
+        tool.not();
+        let res = crate::and(&unit_cube(), &tool, 0.05).unwrap();
+        res.boundaries()
+            .iter()
+            .flat_map(|shell| shell.face_iter())
+            .map(|face| {
+                let p = face.boundaries()[0].front_vertex().unwrap().point();
+                [p.x, p.y, p.z].map(|v| (v * 1e9).round() as i64)
+            })
+            .collect::<Vec<_>>()
+    };
+    let first = order();
+    for _ in 0..8 {
+        assert_eq!(order(), first);
+    }
+}
