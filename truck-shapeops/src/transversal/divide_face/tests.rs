@@ -4,6 +4,92 @@ use truck_geometry::prelude::*;
 use truck_topology::Vertex;
 const TOL: f64 = 0.05;
 
+fn rectangle(x: f64, y: f64, width: f64, height: f64) -> Wire<Point3, BSplineCurve<Point3>> {
+    let v = Vertex::news([
+        Point3::new(x, y, 0.0),
+        Point3::new(x + width, y, 0.0),
+        Point3::new(x + width, y + height, 0.0),
+        Point3::new(x, y + height, 0.0),
+    ]);
+    (0..4).map(|i| line(&v[i], &v[(i + 1) % 4])).collect()
+}
+
+fn divide_rectangles(
+    wires: Vec<Wire<Point3, BSplineCurve<Point3>>>,
+    uv_scale: f64,
+) -> Option<Vec<FaceWithShapesOpStatus<BSplineCurve<Point3>, Plane>>> {
+    let plane = Plane::new(
+        Point3::origin(),
+        Point3::new(uv_scale, 0.0, 0.0),
+        Point3::new(0.0, uv_scale, 0.0),
+    );
+    let face = Face::new(vec![wires[0].clone()], plane);
+    let loops = wires
+        .into_iter()
+        .map(|w| BoundaryWire::new(w, ShapesOpStatus::Or))
+        .collect();
+    divide_one_face(&face, &loops, TOL)
+}
+
+#[test]
+fn cancelled_face_before_another_hole_does_not_panic() {
+    let outer = rectangle(0.0, 0.0, 1.0, 1.0);
+    let second = rectangle(2.0, 0.0, 1.0, 1.0);
+    let hole = rectangle(2.25, 0.25, 0.5, 0.5).inverse();
+    let result =
+        divide_rectangles(vec![outer.clone(), second, outer.inverse(), hole], 1.0).unwrap();
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].0.absolute_boundaries().len(), 2);
+}
+
+#[test]
+fn orphan_hole_is_rejected_instead_of_discarded() {
+    let result = divide_rectangles(
+        vec![
+            rectangle(0.0, 0.0, 1.0, 1.0),
+            rectangle(2.0, 0.0, 0.5, 0.5).inverse(),
+        ],
+        1.0,
+    );
+    assert!(result.is_none());
+}
+
+#[test]
+fn small_holes_and_thin_walls_survive_parameter_scaling() {
+    for scale in [0.1, 1.0, 10.0, 100.0] {
+        for width in [0.01, 0.98] {
+            let offset = (1.0 - width) / 2.0;
+            let result = divide_rectangles(
+                vec![
+                    rectangle(0.0, 0.0, 1.0, 1.0),
+                    rectangle(offset, offset, width, width).inverse(),
+                ],
+                scale,
+            )
+            .unwrap();
+            assert_eq!(result.len(), 1, "scale={scale}, width={width}");
+            assert_eq!(
+                result[0].0.absolute_boundaries().len(),
+                2,
+                "scale={scale}, width={width}"
+            );
+        }
+    }
+}
+
+#[test]
+fn equal_area_different_boundaries_are_not_cancelled() {
+    let result = divide_rectangles(
+        vec![
+            rectangle(0.0, 0.0, 1.0, 1.0),
+            rectangle(0.0, 0.0, 2.0, 0.5).inverse(),
+        ],
+        1.0,
+    );
+    // Ambiguous/invalid containment must fail closed, not return an empty successful result.
+    assert!(result.is_none());
+}
+
 fn line(v0: &Vertex<Point3>, v1: &Vertex<Point3>) -> Edge<Point3, BSplineCurve<Point3>> {
     let curve = BSplineCurve::new(KnotVec::bezier_knot(1), vec![v0.point(), v1.point()]);
     Edge::new(v0, v1, curve)

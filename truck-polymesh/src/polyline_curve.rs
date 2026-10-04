@@ -40,11 +40,17 @@ impl PolylineCurve<Point2> {
     /// assert!(!hexagon.include(p1));
     /// ```
     pub fn include(&self, c: Point2) -> bool {
+        if self.iter().any(|p| (*p - c).so_small()) {
+            return true;
+        }
         let t = 2.0 * std::f64::consts::PI * HashGen::hash1(c);
         let r = Vector2::new(f64::cos(t), f64::sin(t));
         self.iter()
             .circular_tuple_windows()
             .try_fold(0_i32, move |counter, (p0, p1)| {
+                if (*p0 - c).so_small() {
+                    return None;
+                } // Vertex check
                 let a = p0 - c;
                 let b = p1 - c;
                 let s0 = r.x * a.y - r.y * a.x; // v times a
@@ -62,7 +68,7 @@ impl PolylineCurve<Point2> {
                 }
             })
             .map(|counter| counter > 0)
-            .unwrap_or(false)
+            .unwrap_or(true)
     }
 }
 
@@ -123,6 +129,9 @@ pub fn include<'a>(
         .into_iter()
         .flat_map(|boundary| boundary.iter().circular_tuple_windows())
         .try_fold(0_i32, move |counter, (p0, p1)| {
+            if (*p0 - c).so_small() {
+                return None;
+            } // Vertex check
             let a = p0 - c;
             let b = p1 - c;
             let s0 = r.x * a.y - r.y * a.x; // v times a
@@ -140,7 +149,9 @@ pub fn include<'a>(
             }
         })
         .map(|counter| counter > 0)
-        .unwrap_or(false)
+        // If the point is on the boundary, the winding number logic might return false (or be undefined).
+        // unique for truck: We treat the boundary as part of the domain (closed set).
+        .unwrap_or(true)
 }
 
 impl<P> AsRef<Vec<P>> for PolylineCurve<P> {
@@ -407,4 +418,32 @@ fn polyline_test() {
     truck_base::assert_near!(div.1[4], Point3::new(1.0, 0.0, 1.0));
     truck_base::assert_near!(div.1[5], Point3::new(1.0, 1.0, 0.0));
     truck_base::assert_near!(div.1[6], Point3::new(1.0, 1.0, 0.2));
+}
+
+#[cfg(test)]
+mod closed_boundary_regressions {
+    use super::*;
+    fn square(lo: f64, hi: f64) -> PolylineCurve<Point2> {
+        PolylineCurve(vec![
+            Point2::new(lo, lo),
+            Point2::new(hi, lo),
+            Point2::new(hi, hi),
+            Point2::new(lo, hi),
+        ])
+    }
+    #[test]
+    fn outer_and_hole_boundaries_are_included_but_hole_interior_is_not() {
+        let outer = square(0.0, 4.0);
+        let mut inner = square(1.0, 3.0);
+        inner.invert();
+        for point in [Point2::new(0.0, 0.0), Point2::new(2.0, 0.0)] {
+            assert!(outer.include(point));
+            assert!(include([&outer, &inner], point));
+        }
+        for point in [Point2::new(1.0, 1.0), Point2::new(2.0, 1.0)] {
+            assert!(include([&outer, &inner], point));
+        }
+        assert!(!include([&outer, &inner], Point2::new(2.0, 2.0)));
+        assert!(!include([&outer, &inner], Point2::new(5.0, 2.0)));
+    }
 }

@@ -31,7 +31,31 @@ where
     };
     let (x, y) = hint0.or_else(|| surface0.search_nearest_parameter(plane_point, hint0, trials))?;
     let (z, w) = hint1.or_else(|| surface1.search_nearest_parameter(plane_point, hint1, trials))?;
-    let Vector4 { x, y, z, w } = newton::solve(function, Vector4 { x, y, z, w }, trials).ok()?;
+    let res = newton::solve(function, Vector4 { x, y, z, w }, trials);
+    let Vector4 { x, y, z, w } = match res {
+        Ok(res) => res,
+        Err(_) => {
+            let pt0 = surface0.subs(x, y);
+            let pt1 = surface1.subs(z, w);
+            let n0 = surface0.normal(x, y);
+            let n1 = surface1.normal(z, w);
+            // Newton's method may fail when the Jacobian is singular, which happens
+            // when surfaces are coplanar or tangent.
+            // If the points are close enough and normals are parallel (indicating coplanarity),
+            // we accept the initial guess as a valid intersection point.
+            let point = pt0.midpoint(pt1);
+            let plane_norm = plane_normal.magnitude();
+            // A coincident/tangent hint must still satisfy the fourth equation:
+            // the returned point lies on the requested projection plane.
+            let on_plane = plane_norm.is_finite() && plane_norm > 0.0
+                && plane_normal.dot(point - plane_point).abs() <= TOLERANCE * plane_norm;
+            if pt0.near(&pt1) && n0.cross(n1).magnitude() < TOLERANCE && on_plane {
+                return Some((point, Point2::new(x, y), Point2::new(z, w)));
+            } else {
+                return None;
+            }
+        }
+    };
     let point = surface0.subs(x, y).midpoint(surface1.subs(z, w));
     Some((point, Point2::new(x, y), Point2::new(z, w)))
 }
@@ -451,5 +475,60 @@ mod double_projection_tests {
     #[property_test]
     fn sphere_case(#[strategy = 0f64..=(2.0 * PI)] t: f64, #[strategy = 0.5f64..=1.5f64] r: f64) {
         exec_sphere_case(t, r)?;
+    }
+}
+
+#[cfg(test)]
+mod coplanar_projection_regressions {
+    use super::*;
+    fn plane(z: f64) -> Plane {
+        Plane::new(
+            Point3::new(0.0, 0.0, z),
+            Point3::new(1.0, 0.0, z),
+            Point3::new(0.0, 1.0, z),
+        )
+    }
+    #[test]
+    fn coincident_surfaces_accept_a_point_on_the_projection_plane() {
+        let surface = plane(0.0);
+        let point = Point3::new(0.5, 0.25, 0.0);
+        let (result, _, _) = double_projection(
+            &surface,
+            None,
+            &surface,
+            None,
+            point,
+            Vector3::unit_x(),
+            100,
+        )
+        .unwrap();
+        assert_near!(result, point);
+    }
+    #[test]
+    fn coincident_hints_off_the_projection_plane_are_rejected() {
+        let surface = plane(0.0);
+        assert!(double_projection(
+            &surface,
+            Some((0.0, 0.0)),
+            &surface,
+            Some((0.0, 0.0)),
+            Point3::new(1.0, 0.0, 0.0),
+            Vector3::unit_x(),
+            100
+        )
+        .is_none());
+    }
+    #[test]
+    fn separated_parallel_surfaces_are_rejected() {
+        assert!(double_projection(
+            &plane(0.0),
+            None,
+            &plane(1.0),
+            None,
+            Point3::origin(),
+            Vector3::unit_x(),
+            100
+        )
+        .is_none());
     }
 }
