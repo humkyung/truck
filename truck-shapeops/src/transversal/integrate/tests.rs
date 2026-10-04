@@ -128,3 +128,12 @@ fn adjacent_cubes_or() {
     // We expect around 12 faces as analyzed.
     assert_eq!(solid.face_iter().count(), 12);
 }
+
+/// A solid without boundaries cannot be combined: `and`/`or` report failure instead of panicking.
+#[test]
+fn empty_solid_is_rejected_without_panic() {
+    let empty = Solid::new_unchecked(Vec::new());
+    let cube = unit_cube();
+    assert!(crate::and(&empty, &cube, 0.05).is_none());
+    assert!(crate::or(&cube, &empty, 0.05).is_none());
+}
