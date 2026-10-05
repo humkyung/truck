@@ -30,6 +30,8 @@ pub enum Curve {
     NurbsCurve(NurbsCurve<Vector4>),
     /// intersection curve
     IntersectionCurve(IntersectionCurve<Box<Curve>, Box<Surface>, Box<Surface>>),
+    /// parameter curve on a surface, e.g. the contact boundary of a fillet
+    PCurve(PCurve<BSplineCurve<Point2>, Box<Surface>>),
 }
 
 macro_rules! derive_curve_method {
@@ -39,6 +41,7 @@ macro_rules! derive_curve_method {
             Curve::BSplineCurve(got) => $method(got, $($ver), *),
             Curve::NurbsCurve(got) => $method(got, $($ver), *),
             Curve::IntersectionCurve(got) => $method(got, $($ver), *),
+            Curve::PCurve(got) => $method(got, $($ver), *),
         }
     };
 }
@@ -50,6 +53,7 @@ macro_rules! derive_curve_self_method {
             Curve::BSplineCurve(got) => Curve::BSplineCurve($method(got, $($ver), *)),
             Curve::NurbsCurve(got) => Curve::NurbsCurve($method(got, $($ver), *)),
             Curve::IntersectionCurve(got) => Curve::IntersectionCurve($method(got, $($ver), *)),
+            Curve::PCurve(got) => Curve::PCurve($method(got, $($ver), *)),
         }
     };
 }
@@ -106,7 +110,27 @@ impl Curve {
             Curve::IntersectionCurve(_) => {
                 unimplemented!("intersection curve cannot connect by homotopy")
             }
+            Curve::PCurve(_) => unimplemented!("parameter curve cannot connect by homotopy"),
         }
+    }
+}
+
+impl ToSameGeometry<Curve> for IntersectionCurve<Curve, Surface, Surface> {
+    fn to_same_geometry(&self) -> Curve {
+        let (surface0, surface1, leader) = self.clone().destruct();
+        Curve::IntersectionCurve(IntersectionCurve::new(
+            Box::new(surface0),
+            Box::new(surface1),
+            Box::new(leader),
+        ))
+    }
+}
+
+/// Fillet contact boundaries (`truck_shapeops::fillet`) become `Curve::PCurve`.
+impl ToSameGeometry<Curve> for PCurve<BSplineCurve<Point2>, Surface> {
+    fn to_same_geometry(&self) -> Curve {
+        let (curve, surface) = self.clone().decompose();
+        Curve::PCurve(PCurve::new(curve, Box::new(surface)))
     }
 }
 
@@ -132,6 +156,8 @@ pub enum Surface {
     NurbsSurface(NurbsSurface<Vector4>),
     /// revoluted curve
     RevolutedCurve(Processor<RevolutedCurve<Curve>, Matrix4>),
+    /// approximated fillet surface; wrapped by `Processor` to be invertible and transformable
+    ApproxFillet(Processor<ApproxFilletSurface<Box<Surface>, Box<Surface>>, Matrix4>),
 }
 
 macro_rules! derive_surface_method {
@@ -141,6 +167,7 @@ macro_rules! derive_surface_method {
             Self::BSplineSurface(got) => $method(got, $($ver), *),
             Self::NurbsSurface(got) => $method(got, $($ver), *),
             Self::RevolutedCurve(got) => $method(got, $($ver), *),
+            Self::ApproxFillet(got) => $method(got, $($ver), *),
         }
     };
 }
@@ -152,6 +179,7 @@ macro_rules! derive_surface_self_method {
             Self::BSplineSurface(got) => Self::BSplineSurface($method(got, $($ver), *)),
             Self::NurbsSurface(got) => Self::NurbsSurface($method(got, $($ver), *)),
             Self::RevolutedCurve(got) => Self::RevolutedCurve($method(got, $($ver), *)),
+            Self::ApproxFillet(got) => Self::ApproxFillet($method(got, $($ver), *)),
         }
     };
 }
@@ -172,27 +200,43 @@ impl Transformed<Matrix4> for Surface {
     }
 }
 
+/// Checks inclusion by sampling points on `curve` (used for fillet surfaces, parameter curves and
+/// intersection curves, which have no exact inclusion test).
+fn include_by_sampling(surface: &Surface, curve: &Curve) -> bool {
+    const SAMPLES: usize = 16;
+    let (t0, t1) = curve.range_tuple();
+    (0..=SAMPLES).all(|i| {
+        let t = t0 + (t1 - t0) * i as f64 / SAMPLES as f64;
+        surface.search_parameter(curve.subs(t), None, 100).is_some()
+    })
+}
+
 impl IncludeCurve<Curve> for Surface {
     #[inline(always)]
     fn include(&self, curve: &Curve) -> bool {
+        if matches!(self, Surface::ApproxFillet(_))
+            || matches!(curve, Curve::PCurve(_) | Curve::IntersectionCurve(_))
+        {
+            return include_by_sampling(self, curve);
+        }
         match self {
             Surface::BSplineSurface(surface) => match curve {
                 &Curve::Line(curve) => surface.include(&BSplineCurve::from(curve)),
                 Curve::BSplineCurve(curve) => surface.include(curve),
                 Curve::NurbsCurve(curve) => surface.include(curve),
-                Curve::IntersectionCurve(_) => unimplemented!(),
+                Curve::IntersectionCurve(_) | Curve::PCurve(_) => unreachable!(),
             },
             Surface::NurbsSurface(surface) => match curve {
                 &Curve::Line(curve) => surface.include(&BSplineCurve::from(curve)),
                 Curve::BSplineCurve(curve) => surface.include(curve),
                 Curve::NurbsCurve(curve) => surface.include(curve),
-                Curve::IntersectionCurve(_) => unimplemented!(),
+                Curve::IntersectionCurve(_) | Curve::PCurve(_) => unreachable!(),
             },
             Surface::Plane(surface) => match curve {
                 &Curve::Line(curve) => surface.include(&BSplineCurve::from(curve)),
                 Curve::BSplineCurve(curve) => surface.include(curve),
                 Curve::NurbsCurve(curve) => surface.include(curve),
-                Curve::IntersectionCurve(_) => unimplemented!(),
+                Curve::IntersectionCurve(_) | Curve::PCurve(_) => unreachable!(),
             },
             Surface::RevolutedCurve(surface) => match surface.entity_curve() {
                 &Curve::Line(curve) => {
@@ -208,7 +252,7 @@ impl IncludeCurve<Curve> for Surface {
                         &Curve::Line(curve) => surface.include(&BSplineCurve::from(curve)),
                         Curve::BSplineCurve(curve) => surface.include(curve),
                         Curve::NurbsCurve(curve) => surface.include(curve),
-                        Curve::IntersectionCurve(_) => unimplemented!(),
+                        Curve::IntersectionCurve(_) | Curve::PCurve(_) => unreachable!(),
                     }
                 }
                 Curve::NurbsCurve(entity_curve) => {
@@ -221,11 +265,12 @@ impl IncludeCurve<Curve> for Surface {
                         &Curve::Line(curve) => surface.include(&BSplineCurve::from(curve)),
                         Curve::BSplineCurve(curve) => surface.include(curve),
                         Curve::NurbsCurve(curve) => surface.include(curve),
-                        Curve::IntersectionCurve(_) => unimplemented!(),
+                        Curve::IntersectionCurve(_) | Curve::PCurve(_) => unreachable!(),
                     }
                 }
-                Curve::IntersectionCurve(_) => unimplemented!(),
+                Curve::IntersectionCurve(_) | Curve::PCurve(_) => include_by_sampling(self, curve),
             },
+            Surface::ApproxFillet(_) => unreachable!(),
         }
     }
 }
@@ -241,6 +286,13 @@ impl IncludeCurve<Curve> for Plane {
 
 impl ToSameGeometry<Surface> for Plane {
     fn to_same_geometry(&self) -> Surface { (*self).into() }
+}
+
+/// Fillet surfaces (`truck_shapeops::fillet`) become `Surface::ApproxFillet`.
+impl ToSameGeometry<Surface> for ApproxFilletSurface<Surface, Surface> {
+    fn to_same_geometry(&self) -> Surface {
+        Surface::ApproxFillet(Processor::new(self.clone().into()))
+    }
 }
 
 impl ToSameGeometry<Surface> for RevolutedCurve<Curve> {
@@ -271,6 +323,7 @@ impl SearchNearestParameter<D2> for Surface {
                 };
                 algo::surface::search_nearest_parameter(rotted, point, hint, trials)
             }
+            Surface::ApproxFillet(fillet) => fillet.search_nearest_parameter(point, hint, trials),
         }
     }
 }
@@ -303,6 +356,7 @@ impl ToSameGeometry<Surface> for ExtrudedCurve<Curve, Vector3> {
                 .into()
             }
             (Curve::IntersectionCurve(_), Curve::IntersectionCurve(_)) => unimplemented!(),
+            (Curve::PCurve(_), Curve::PCurve(_)) => unimplemented!(),
             _ => unreachable!(),
         }
     }

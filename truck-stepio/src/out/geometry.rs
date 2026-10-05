@@ -478,6 +478,7 @@ impl DisplayByStep for ModelingCurve {
             ModelingCurve::BSplineCurve(x) => DisplayByStep::fmt(x, idx, f),
             ModelingCurve::NurbsCurve(x) => DisplayByStep::fmt(x, idx, f),
             ModelingCurve::IntersectionCurve(x) => DisplayByStep::fmt(x, idx, f),
+            ModelingCurve::PCurve(_) => unimplemented!("STEP output of parameter curves"),
         }
     }
 }
@@ -489,6 +490,7 @@ impl StepLength for ModelingCurve {
             ModelingCurve::BSplineCurve(x) => x.step_length(),
             ModelingCurve::NurbsCurve(x) => x.step_length(),
             ModelingCurve::IntersectionCurve(x) => x.step_length(),
+            ModelingCurve::PCurve(_) => unimplemented!("STEP output of parameter curves"),
         }
     }
 }
@@ -801,6 +803,7 @@ impl DisplayByStep for ModelingSurface {
             ModelingSurface::BSplineSurface(x) => DisplayByStep::fmt(x, idx, f),
             ModelingSurface::NurbsSurface(x) => DisplayByStep::fmt(x, idx, f),
             ModelingSurface::RevolutedCurve(x) => DisplayByStep::fmt(x, idx, f),
+            ModelingSurface::ApproxFillet(_) => unimplemented!("STEP output of fillet surfaces"),
         }
     }
 }
@@ -812,6 +815,7 @@ impl StepLength for ModelingSurface {
             ModelingSurface::BSplineSurface(x) => x.step_length(),
             ModelingSurface::NurbsSurface(x) => x.step_length(),
             ModelingSurface::RevolutedCurve(x) => x.entity().step_length(),
+            ModelingSurface::ApproxFillet(_) => unimplemented!("STEP output of fillet surfaces"),
         }
     }
 }
