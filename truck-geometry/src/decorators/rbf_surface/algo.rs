@@ -695,7 +695,7 @@ where
                     n1.dot(p1.to_vec()) + r,
                 );
                 let c_next1 = Vector3::new(der.dot(der) - der2.dot(pc), r_der, r_der);
-                mat.invert().unwrap() * PointVector3(c_next0, c_next1)
+                mat.invert()? * PointVector3(c_next0, c_next1)
             };
 
             let duv0 = {
@@ -704,7 +704,7 @@ where
                     vder0 + r * surface0.normal_vder(u0, v0),
                     n0,
                 );
-                mat.invert().unwrap() * (c_next - PointVector3(p0 + r * n0, r_der * n0))
+                mat.invert()? * (c_next - PointVector3(p0 + r * n0, r_der * n0))
             };
             debug_assert!(duv0.0.z.so_small() && duv0.1.z.so_small(), "{duv0:?}");
 
@@ -714,7 +714,7 @@ where
                     vder1 + r * surface1.normal_vder(u1, v1),
                     n1,
                 );
-                mat.invert().unwrap() * (c_next - PointVector3(p1 + r * n1, r_der * n1))
+                mat.invert()? * (c_next - PointVector3(p1 + r * n1, r_der * n1))
             };
             debug_assert!(duv1.0.z.so_small() && duv1.1.z.so_small(), "{duv1:?}");
 
@@ -810,7 +810,7 @@ where
                     n1.dot(p1.to_vec()) + r,
                 );
                 let c_next1 = Vector3::new(der.dot(der) - der2.dot(pc), r_der, r_der);
-                mat.invert().unwrap() * PointVector3(c_next0, c_next1)
+                mat.invert()? * PointVector3(c_next0, c_next1)
             };
 
             let duv0 = {
@@ -819,7 +819,7 @@ where
                     vder0 + r * surface0.normal_vder(u0, v0),
                     n0,
                 );
-                mat.invert().unwrap() * (c_next - PointVector3(p0 + r * n0, r_der * n0))
+                mat.invert()? * (c_next - PointVector3(p0 + r * n0, r_der * n0))
             };
             debug_assert!(duv0.0.z.so_small() && duv0.1.z.so_small(), "{duv0:?}");
 
@@ -829,7 +829,7 @@ where
                     vder1 + r * surface1.normal_vder(u1, v1),
                     n1,
                 );
-                mat.invert().unwrap() * (c_next - PointVector3(p1 + r * n1, r_der * n1))
+                mat.invert()? * (c_next - PointVector3(p1 + r * n1, r_der * n1))
             };
             debug_assert!(duv1.0.z.so_small() && duv1.1.z.so_small(), "{duv1:?}");
 
@@ -842,7 +842,7 @@ where
                 x: dt,
                 y: dw,
                 z: ds,
-            } = mat.invert().unwrap() * vec;
+            } = mat.invert()? * vec;
 
             if p0.near(&e) && dt.so_small2() && ds.so_small2() && dw.so_small2() {
                 let contact_point0 = ContactPoint {
@@ -920,7 +920,7 @@ where
                     n1.dot(p1.to_vec()) + r,
                 );
                 let c_next1 = Vector3::new(der.dot(der) - der2.dot(pc), r_der, r_der);
-                mat.invert().unwrap() * PointVector3(c_next0, c_next1)
+                mat.invert()? * PointVector3(c_next0, c_next1)
             };
 
             let duv0 = {
@@ -929,7 +929,7 @@ where
                     vder0 + r * surface0.normal_vder(u0, v0),
                     n0,
                 );
-                mat.invert().unwrap() * (c_next - PointVector3(p0 + r * n0, r_der * n0))
+                mat.invert()? * (c_next - PointVector3(p0 + r * n0, r_der * n0))
             };
             debug_assert!(duv0.0.z.so_small() && duv0.1.z.so_small(), "{duv0:?}");
 
@@ -939,7 +939,7 @@ where
                     vder1 + r * surface1.normal_vder(u1, v1),
                     n1,
                 );
-                mat.invert().unwrap() * (c_next - PointVector3(p1 + r * n1, r_der * n1))
+                mat.invert()? * (c_next - PointVector3(p1 + r * n1, r_der * n1))
             };
             debug_assert!(duv1.0.z.so_small() && duv1.1.z.so_small(), "{duv1:?}");
 
@@ -952,7 +952,7 @@ where
                 x: dt,
                 y: dw,
                 z: ds,
-            } = mat.invert().unwrap() * vec;
+            } = mat.invert()? * vec;
 
             if p1.near(&e) && dt.so_small2() && ds.so_small2() && dw.so_small2() {
                 let contact_point0 = ContactPoint {

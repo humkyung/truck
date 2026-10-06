@@ -239,8 +239,20 @@ impl IncludeCurve<Curve> for Surface {
                 Curve::IntersectionCurve(_) | Curve::PCurve(_) => unreachable!(),
             },
             Surface::RevolutedCurve(surface) => match surface.entity_curve() {
-                &Curve::Line(curve) => {
-                    self.include(&Curve::BSplineCurve(BSplineCurve::from(curve)))
+                // The entity line becomes a B-spline (converting `curve` instead recursed forever).
+                &Curve::Line(entity_curve) => {
+                    let entity_curve = BSplineCurve::from(entity_curve);
+                    let surface = RevolutedCurve::by_revolution(
+                        &entity_curve,
+                        surface.origin(),
+                        surface.axis(),
+                    );
+                    match curve {
+                        &Curve::Line(curve) => surface.include(&BSplineCurve::from(curve)),
+                        Curve::BSplineCurve(curve) => surface.include(curve),
+                        Curve::NurbsCurve(curve) => surface.include(curve),
+                        Curve::IntersectionCurve(_) | Curve::PCurve(_) => unreachable!(),
+                    }
                 }
                 Curve::BSplineCurve(entity_curve) => {
                     let surface = RevolutedCurve::by_revolution(
